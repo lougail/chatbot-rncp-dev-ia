@@ -27,11 +27,14 @@ from __future__ import annotations
 
 import json
 import logging
+import operator
+from collections.abc import Sequence
 
 from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
 from langchain.retrievers.document_compressors import CrossEncoderReranker
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_community.retrievers import BM25Retriever
+from langchain_core.callbacks import Callbacks
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -176,6 +179,35 @@ def build_hybrid_retriever() -> EnsembleRetriever:
 # ---------------------------------------------------------------------------
 # Reranker : cross-encoder bge-reranker-v2-m3 (multilingue, FR-friendly)
 # ---------------------------------------------------------------------------
+class ScoringCrossEncoderReranker(CrossEncoderReranker):
+    """Variante du CrossEncoderReranker qui injecte le score dans metadata.
+
+    Le `CrossEncoderReranker` upstream (LangChain v0.3) calcule bien les scores
+    cross-encoder pour le tri, mais les jette avant de retourner les documents.
+    Conséquence : impossible d'afficher le vrai score à l'utilisateur — c'est
+    un bug connu (langchain-ai/langchain#22556).
+
+    Ici on override `compress_documents` pour stocker le score dans
+    `metadata['relevance_score']` AVANT le slicing top_n, sans changer la
+    logique de tri.
+    """
+
+    def compress_documents(
+        self,
+        documents: Sequence[Document],
+        query: str,
+        callbacks: Callbacks | None = None,
+    ) -> Sequence[Document]:
+        scores = self.model.score([(query, doc.page_content) for doc in documents])
+        docs_with_scores = list(zip(documents, scores, strict=True))
+        ranked = sorted(docs_with_scores, key=operator.itemgetter(1), reverse=True)
+        result = []
+        for doc, score in ranked[: self.top_n]:
+            doc.metadata["relevance_score"] = float(score)
+            result.append(doc)
+        return result
+
+
 def build_retriever() -> ContextualCompressionRetriever:
     """Pipeline complet : Hybrid → Cross-encoder rerank → top 5.
 
@@ -186,7 +218,7 @@ def build_retriever() -> ContextualCompressionRetriever:
     Modèle utilisé : `BAAI/bge-reranker-v2-m3` (multilingue, FR natif).
     """
     hybrid = build_hybrid_retriever()
-    reranker = CrossEncoderReranker(model=_get_reranker_model(), top_n=RERANKER_TOP_N)
+    reranker = ScoringCrossEncoderReranker(model=_get_reranker_model(), top_n=RERANKER_TOP_N)
     return ContextualCompressionRetriever(
         base_compressor=reranker,
         base_retriever=hybrid,
