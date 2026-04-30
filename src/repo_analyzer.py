@@ -25,6 +25,7 @@ totale du pipeline existant, zéro modification de chain.py.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 import tempfile
@@ -128,10 +129,28 @@ def extract_github_url(text: str) -> str | None:
 
 
 def _shallow_clone(url: str, target: Path) -> None:
-    """Clone superficiel (depth=1) — minimise la bande passante et le temps."""
-    log.info(f"📥 Clone shallow de {url}")
+    """Clone superficiel (depth=1) — minimise la bande passante et le temps.
+
+    Pour les repos PRIVÉS, lit `GITHUB_TOKEN` depuis l'environnement et
+    l'injecte dans l'URL via le format `https://x-access-token:TOKEN@github.com/...`
+    (méthode officielle GitHub, voir docs.github.com/en/get-started/git-basics/
+    caching-your-github-credentials-in-git).
+
+    ⚠️ Sécurité : ne JAMAIS pousser un GITHUB_TOKEN sur un Space public.
+    Utiliser cette feature uniquement en local (`chainlit run app.py`) ou
+    sur un Space privé.
+    """
+    clone_url = url
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if token and url.startswith("https://github.com/"):
+        clone_url = url.replace(
+            "https://github.com/", f"https://x-access-token:{token}@github.com/"
+        )
+        log.info(f"📥 Clone shallow de {url} (avec auth GITHUB_TOKEN)")
+    else:
+        log.info(f"📥 Clone shallow de {url}")
     subprocess.run(
-        ["git", "clone", "--depth", "1", "--quiet", url, str(target)],
+        ["git", "clone", "--depth", "1", "--quiet", clone_url, str(target)],
         check=True,
         capture_output=True,
         timeout=60,
