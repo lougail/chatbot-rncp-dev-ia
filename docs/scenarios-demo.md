@@ -99,3 +99,24 @@ OU si des chunks remontent quand même (peu probable mais possible) :
 - Montrer les screenshots préparés
 - Expliquer l'architecture sur le schéma du README
 - Faire un walkthrough du code (`src/chain.py` est lisible)
+
+## 📸 Screenshots de référence (testés le 2026-04-30)
+
+Tous générés via `dev-browser` automatisé, latence mesurée.
+
+| Scénario | Latence | Screenshot |
+|----------|---------|------------|
+| 1 — Projet riche FastAPI/Docker/CI/Monitoring | 12.4s | [`screenshots/scenario-1-projet-riche.png`](screenshots/scenario-1-projet-riche.png) |
+| 2 — Question ciblée C13 | 7.9s | [`screenshots/scenario-2-c13.png`](screenshots/scenario-2-c13.png) |
+| 3 — Hors-scope (cookies) | 8.0s | [`screenshots/scenario-3-hors-scope.png`](screenshots/scenario-3-hors-scope.png) |
+
+## ⚠️ Limitation connue à mentionner en soutenance
+
+Les **scores de pertinence** affichés à côté de chaque source (`score : 0.00`) sont
+incorrects à cause d'un détail d'intégration entre `CrossEncoderReranker` (LangChain)
+et la lecture de `metadata['relevance_score']` côté affichage. **Le retrieval
+fonctionne correctement** (les sources retournées sont pertinentes), c'est juste
+l'affichage du score qui ne reflète pas la valeur réelle. À fixer post-soutenance.
+
+C'est l'occasion en soutenance de montrer que tu **identifies les limites** de ta
+propre solution — argument d'honnêteté intellectuelle apprécié par les jurys.
