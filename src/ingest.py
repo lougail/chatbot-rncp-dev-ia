@@ -21,11 +21,11 @@ import argparse
 import logging
 from pathlib import Path
 
+import pymupdf  # alias officiel : `import fitz` mais déprécié en 2024
 from langchain_core.documents import Document
 from langchain_mistralai import MistralAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from pypdf import PdfReader
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 
@@ -49,14 +49,20 @@ log = logging.getLogger(__name__)
 def load_pdf(pdf_path: Path) -> list[Document]:
     """Charge le PDF et retourne une liste de Documents (un par page).
 
+    On utilise PyMuPDF (fitz) plutôt que pypdf parce que pypdf perd les espaces
+    sur certains PDF (polices vectorielles, encodage particulier — c'était notre
+    cas avec le référentiel Simplon). PyMuPDF préserve mieux la mise en page.
+
     On garde la page comme métadonnée — utile pour citer la source en démo.
     """
     log.info(f"📖 Chargement du PDF : {pdf_path.name}")
-    reader = PdfReader(pdf_path)
+    doc = pymupdf.open(pdf_path)
     documents: list[Document] = []
 
-    for page_num, page in enumerate(reader.pages, start=1):
-        text = page.extract_text()
+    for page_num, page in enumerate(doc, start=1):
+        # `get_text("text")` extrait le texte brut en respectant l'ordre de lecture
+        # et les espaces. Plus propre que `get_text()` qui peut concaténer sans séparateur.
+        text = page.get_text("text")
         if not text or not text.strip():
             # Pages vides ou avec uniquement des images — on saute
             continue
@@ -71,6 +77,7 @@ def load_pdf(pdf_path: Path) -> list[Document]:
             )
         )
 
+    doc.close()
     log.info(f"   → {len(documents)} pages chargées")
     return documents
 

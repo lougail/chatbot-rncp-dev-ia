@@ -83,6 +83,33 @@ def build_retriever() -> VectorStoreRetriever:
     )
 
 
+def retrieve_with_scores(question: str) -> list[tuple[Document, float]]:
+    """Récupère les top-k chunks AVEC leur score de similarité.
+
+    Le retriever standard de LangChain ne retourne pas les scores — c'est une limite
+    de l'abstraction Runnable. Pour les afficher en démo (et debug), on utilise
+    directement la méthode `similarity_search_with_score` de Qdrant.
+
+    Le score est une similarité cosinus (0 = orthogonal, 1 = identique).
+    Pour Qdrant, plus le score est élevé, plus le chunk est pertinent.
+
+    Returns:
+        Liste de tuples (Document, score) triés par score décroissant.
+        Filtré par SCORE_THRESHOLD (cohérent avec le retriever).
+    """
+    vector_store = _get_vector_store()
+
+    # k = 2 fois RETRIEVAL_K pour avoir une marge avant le filtrage par threshold
+    results = vector_store.similarity_search_with_score(
+        query=question,
+        k=RETRIEVAL_K * 2,
+    )
+
+    # On applique nous-mêmes le filtre par seuil + on coupe à RETRIEVAL_K
+    filtered = [(doc, score) for doc, score in results if score >= SCORE_THRESHOLD]
+    return filtered[:RETRIEVAL_K]
+
+
 # ---------------------------------------------------------------------------
 # Helpers pour le prompt
 # ---------------------------------------------------------------------------

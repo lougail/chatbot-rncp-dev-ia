@@ -20,7 +20,7 @@ import logging
 import chainlit as cl
 from langchain_core.runnables.config import RunnableConfig
 
-from src.chain import build_chain, build_retriever
+from src.chain import build_chain, retrieve_with_scores
 from src.prompts import ERROR_MESSAGE, WELCOME_MESSAGE
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
@@ -40,7 +40,6 @@ async def on_chat_start() -> None:
     """
     try:
         chain = build_chain()
-        retriever = build_retriever()
     except Exception:
         # On log l'erreur côté serveur, on affiche un message générique côté user
         log.exception("Erreur lors du build de la chain")
@@ -57,8 +56,9 @@ async def on_chat_start() -> None:
         return
 
     # Stockage en session — accessible depuis on_message via cl.user_session.get(...)
+    # On garde uniquement la chain : pour les sources on utilise retrieve_with_scores()
+    # qui récupère les scores ET les chunks en une seule passe (plus performant).
     cl.user_session.set("chain", chain)
-    cl.user_session.set("retriever", retriever)
 
     # Message d'accueil
     await cl.Message(content=WELCOME_MESSAGE, author="Assistant RNCP").send()
@@ -71,9 +71,8 @@ async def on_chat_start() -> None:
 async def on_message(message: cl.Message) -> None:
     """Hook appelé à chaque message envoyé par l'utilisateur."""
     chain = cl.user_session.get("chain")
-    retriever = cl.user_session.get("retriever")
 
-    if chain is None or retriever is None:
+    if chain is None:
         await cl.Message(content=ERROR_MESSAGE, author="Système").send()
         return
 
@@ -86,16 +85,18 @@ async def on_message(message: cl.Message) -> None:
         ).send()
         return
 
-    # 1. Récupérer les chunks pour pouvoir afficher les sources EN PARALLÈLE de la réponse
+    # 1. Récupérer les chunks AVEC leurs scores de similarité
+    # On le fait avant la chain pour pouvoir afficher les sources en démo
+    # (sinon la chain encapsule le retrieval et on perd l'info)
     try:
-        docs = await retriever.ainvoke(message.content)
+        docs_with_scores = retrieve_with_scores(message.content)
     except Exception:
         log.exception("Erreur retrieval")
         await cl.Message(content=ERROR_MESSAGE, author="Système").send()
         return
 
-    if not docs:
-        # Aucun chunk pertinent — la question est probablement hors-sujet
+    if not docs_with_scores:
+        # Aucun chunk au-dessus du SCORE_THRESHOLD — la question est probablement hors-sujet
         await cl.Message(
             content=(
                 "🤔 Je n'ai trouvé aucun extrait pertinent dans le référentiel pour cette question. "
@@ -123,8 +124,8 @@ async def on_message(message: cl.Message) -> None:
         await cl.Message(content=ERROR_MESSAGE, author="Système").send()
         return
 
-    # 3. Afficher les sources utilisées (extraits du référentiel)
-    sources_md = _format_sources_for_display(docs)
+    # 3. Afficher les sources utilisées (extraits du référentiel + scores)
+    sources_md = _format_sources_for_display(docs_with_scores)
     await cl.Message(
         content=sources_md,
         author="📚 Sources du référentiel",
@@ -134,15 +135,20 @@ async def on_message(message: cl.Message) -> None:
 # ---------------------------------------------------------------------------
 # Helpers d'affichage
 # ---------------------------------------------------------------------------
-def _format_sources_for_display(docs: list) -> str:
-    """Formate les chunks récupérés pour affichage utilisateur (markdown lisible)."""
+def _format_sources_for_display(docs_with_scores: list) -> str:
+    """Formate les chunks récupérés (avec scores) pour affichage utilisateur.
+
+    Le score affiché est la similarité cosinus retournée par Qdrant.
+    Plus c'est proche de 1.0, plus le chunk est pertinent.
+    """
     lines = ["### Extraits utilisés pour cette analyse\n"]
-    for i, doc in enumerate(docs, start=1):
+    for i, (doc, score) in enumerate(docs_with_scores, start=1):
         page = doc.metadata.get("page", "?")
         # On tronque pour éviter un mur de texte — l'utilisateur peut consulter le PDF original
         snippet = doc.page_content.strip()
         if len(snippet) > 400:
             snippet = snippet[:400] + "…"
-        lines.append(f"**Source {i}** — page {page}\n\n> {snippet}\n")
+        # Affichage du score sur 2 décimales — plus lisible que 0.7384927
+        lines.append(f"**Source {i}** — page {page} · *score : {score:.2f}*\n\n> {snippet}\n")
 
     return "\n---\n\n".join(lines)

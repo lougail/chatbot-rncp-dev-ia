@@ -23,7 +23,9 @@ dependencies = [
     "qdrant-client>=1.12",                # Client Python Qdrant
 
     # PDF parsing
-    "pypdf>=5.1",                         # Lecture du référentiel PDF
+    # PyMuPDF (fitz) plutôt que pypdf : meilleure préservation des espaces et de la mise en page
+    # → essentiel pour les PDF avec polices vectorielles comme le référentiel Simplon
+    "pymupdf>=1.24",
 
     # Interface
     "chainlit>=2.0",                      # UI chat moderne (alternative à Gradio)
