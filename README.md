@@ -2,7 +2,7 @@
 
 > Chatbot RAG analysant la couverture du référentiel RNCP "Développeur en intelligence artificielle" (titre 2023, Simplon) par un projet décrit en langage naturel.
 
-[![CI](https://github.com/USERNAME/chatbot-rncp-dev-ia/actions/workflows/ci.yml/badge.svg)](https://github.com/USERNAME/chatbot-rncp-dev-ia/actions/workflows/ci.yml)
+[![CI](https://github.com/lougail/chatbot-rncp-dev-ia/actions/workflows/ci.yml/badge.svg)](https://github.com/lougail/chatbot-rncp-dev-ia/actions/workflows/ci.yml)
 ![Python 3.13](https://img.shields.io/badge/python-3.13-blue)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 
@@ -126,7 +126,7 @@ Le système repose sur une architecture **RAG** (Retrieval Augmented Generation)
 ### Étape 1 — Cloner et installer les deps
 
 ```bash
-git clone https://github.com/USERNAME/chatbot-rncp-dev-ia.git
+git clone https://github.com/lougail/chatbot-rncp-dev-ia.git
 cd chatbot-rncp-dev-ia
 uv sync
 ```
@@ -202,6 +202,10 @@ La compétence C13 est-elle validée si j'ai seulement un Dockerfile sans CI/CD 
 J'ai entraîné un modèle de classification avec MLflow et mis en place du
 monitoring Prometheus. Quelles compétences me manquent pour valider le bloc 2 ?
 ```
+
+> 📋 **3 scénarios de test détaillés** (avec compétences attendues et plan B en cas de souci)
+> sont documentés dans [`docs/scenarios-demo.md`](docs/scenarios-demo.md) — utilisés pour la
+> démonstration live en soutenance.
 
 ---
 
