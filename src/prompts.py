@@ -67,6 +67,22 @@ Pour chaque compétence partiellement couverte :
 ## Compétences non couvertes (mentionnées dans le contexte)
 - **CXX** ❌ — raison brève (max 1 phrase)
 
+## 🎯 Plan d'action chiffré (V2)
+Pour les **3 compétences manquantes les plus accessibles** (faible effort, fort impact),
+propose un plan concret. Format strict :
+- **CXX** — *libellé court de la compétence*
+  - **Effort estimé** : `~Xh` (réaliste pour un apprenant Simplon : 2h pour ajouter un fichier de config, 4h pour des tests basiques, 1-2j pour un sous-système complet)
+  - **Étapes** :
+    1. Action concrète et vérifiable (ex: "Créer `tests/test_api.py` avec 5 tests pytest")
+    2. Action concrète et vérifiable
+    3. Action concrète et vérifiable
+  - **Preuve à fournir** : ce qui devra apparaître dans le repo pour valider (ex: "badge coverage ≥ 70% dans le README")
+
+Choisis 3 compétences que l'apprenant peut viser **rapidement** étant donné son projet
+actuel (par ex. ajouter des tests si la stack le permet déjà). Pas de plan pour les
+compétences hors scope du projet (ex: ne suggère pas C1 scraping si le projet est une
+app sans data pipeline).
+
 ## Synthèse par bloc
 - **Bloc 1 (Données, C1-C5)** : X/5 compétences validées
 - **Bloc 2 (Modèles IA, C6-C13)** : Y/8 compétences validées
