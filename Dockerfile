@@ -15,9 +15,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copier UNIQUEMENT les fichiers de deps avant tout (pour profiter du cache Docker)
-# Si on copie tout le code en premier, le moindre changement invalide le cache pip.
-COPY pyproject.toml uv.lock ./
+# Copier les fichiers de deps avant tout (pour profiter du cache Docker)
+# README.md est inclus car pyproject.toml le référence dans `[project].readme`
+# (sinon `uv sync` échoue avec "Readme file does not exist").
+COPY pyproject.toml uv.lock README.md ./
 
 # Installer les deps dans /app/.venv (--frozen = utilise pile la version du lockfile)
 # --no-dev = on n'installe pas pytest, ruff, etc. (pas besoin en runtime)
