@@ -185,10 +185,12 @@ async def on_message(message: cl.Message) -> None:
         return
 
     # 3. Afficher les sources utilisées (extraits du référentiel + scores)
+    # NB : pas d'emoji dans `author=` — Chainlit génère un avatar à partir
+    # du nom et certains emojis font crasher le endpoint avec un 400.
     sources_md = _format_sources_for_display(docs_with_scores)
     await cl.Message(
         content=sources_md,
-        author="📚 Sources du référentiel",
+        author="Sources du référentiel",
     ).send()
 
 
