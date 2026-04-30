@@ -247,6 +247,32 @@ def retrieve_with_scores(question: str) -> list[tuple[Document, float]]:
     return [(d, float(d.metadata.get("relevance_score", 0.0))) for d in docs]
 
 
+def get_chunks_by_competence(codes: list[str]) -> list[tuple[Document, float]]:
+    """Récupère directement les chunks correspondant à des codes compétence.
+
+    Court-circuit du retrieval hybride pour les questions très ciblées
+    (ex: "C13 ?" → on a déjà la compétence en clair, pas besoin d'embeddings).
+
+    Avantages :
+      - Latence instantanée (pas d'appel Mistral embed, pas de rerank)
+      - Pertinence parfaite (on récupère exactement la compétence demandée)
+      - Coût zéro (0 token Mistral)
+
+    Args:
+        codes: Liste de codes type ["C13", "C19"]. Insensible à la casse.
+
+    Returns:
+        Liste (Document, score=1.0) — score à 1.0 car match exact.
+        Liste vide si aucune compétence ne matche.
+    """
+    bm25 = _get_bm25_retriever()
+    # Le BM25Retriever LangChain stocke les Documents dans `docs` après .from_documents
+    all_docs: list[Document] = getattr(bm25, "docs", [])
+    upper_codes = {c.upper() for c in codes}
+    matches = [d for d in all_docs if str(d.metadata.get("competence", "")).upper() in upper_codes]
+    return [(d, 1.0) for d in matches]
+
+
 # ---------------------------------------------------------------------------
 # Helpers pour le prompt
 # ---------------------------------------------------------------------------

@@ -26,6 +26,7 @@ from src.chain import (
     _get_reranker_model,
     build_chain,
     format_docs,
+    get_chunks_by_competence,
     retrieve_with_scores,
 )
 from src.intent_router import META_RESPONSE, Intent, detect_intent
@@ -160,11 +161,21 @@ async def on_message(message: cl.Message) -> None:
         return
 
     # 1. Récupérer les chunks AVEC leurs scores de pertinence (cross-encoder)
-    # Pipeline complet : BM25 + Qdrant → EnsembleRetriever → CrossEncoder rerank → top 5
-    # IMPORTANT : on appelle ça UNE SEULE FOIS, puis on passe les docs à la chain
-    # (sinon le pipeline hybrid+rerank serait exécuté deux fois = +5s de latence)
+    # Stratégie de retrieval guidée par l'intent :
+    #   - SPECIFIC_COMPETENCE / COMPARISON → lookup direct par code (pas de RAG,
+    #     instantané, gratuit en tokens) tant que tous les codes existent
+    #   - autres intents → retrieval hybride + reranker classique (top_n adapté)
     try:
-        docs_with_scores = retrieve_with_scores(user_query)
+        if (
+            intent_result.intent in (Intent.SPECIFIC_COMPETENCE, Intent.COMPARISON)
+            and intent_result.competences
+        ):
+            docs_with_scores = get_chunks_by_competence(intent_result.competences)
+            # Si rien trouvé en lookup direct, on retombe sur le retrieval normal
+            if not docs_with_scores:
+                docs_with_scores = retrieve_with_scores(user_query)
+        else:
+            docs_with_scores = retrieve_with_scores(user_query)
     except Exception:
         log.exception("Erreur retrieval")
         await cl.Message(content=ERROR_MESSAGE, author="Système").send()
