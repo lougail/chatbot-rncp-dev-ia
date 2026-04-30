@@ -307,4 +307,4 @@ uv run ruff format --check .
 
 ## 📄 Licence
 
-MIT — voir `LICENSE` (à ajouter)
+[MIT](LICENSE) — utilisation libre, modification autorisée, attribution requise.
