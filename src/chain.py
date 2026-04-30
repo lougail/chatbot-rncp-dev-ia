@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import operator
 from collections.abc import Sequence
 
@@ -190,6 +191,11 @@ class ScoringCrossEncoderReranker(CrossEncoderReranker):
     Ici on override `compress_documents` pour stocker le score dans
     `metadata['relevance_score']` AVANT le slicing top_n, sans changer la
     logique de tri.
+
+    On applique aussi une sigmoid pour convertir le logit brut du cross-encoder
+    en probabilité [0,1] — beaucoup plus interprétable côté UI (par ex. 0.62
+    plutôt que 0.5 brut). La sigmoid est strictement monotone donc le tri est
+    identique avant/après transformation.
     """
 
     def compress_documents(
@@ -203,7 +209,7 @@ class ScoringCrossEncoderReranker(CrossEncoderReranker):
         ranked = sorted(docs_with_scores, key=operator.itemgetter(1), reverse=True)
         result = []
         for doc, score in ranked[: self.top_n]:
-            doc.metadata["relevance_score"] = float(score)
+            doc.metadata["relevance_score"] = 1.0 / (1.0 + math.exp(-float(score)))
             result.append(doc)
         return result
 
