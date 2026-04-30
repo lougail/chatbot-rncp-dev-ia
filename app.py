@@ -185,14 +185,18 @@ async def on_message(message: cl.Message) -> None:
         await cl.Message(content=ERROR_MESSAGE, author="Système").send()
         return
 
-    # 3. Afficher les sources utilisées (extraits du référentiel + scores)
-    # NB : pas d'emoji dans `author=` — Chainlit génère un avatar à partir
-    # du nom et certains emojis font crasher le endpoint avec un 400.
+    # 3. Afficher les sources dans un Step dépliable (replié par défaut).
+    # Avant : un long message dans le chat avec 10 sources (mur de texte).
+    # Maintenant : un panneau "📚 Sources du référentiel (10 extraits)" que
+    # l'utilisateur déplie s'il veut vérifier les citations. UX beaucoup plus
+    # propre, surtout en démo soutenance.
     sources_md = _format_sources_for_display(docs_with_scores)
-    await cl.Message(
-        content=sources_md,
-        author="Sources du référentiel",
-    ).send()
+    async with cl.Step(
+        name=f"📚 Sources du référentiel ({len(docs_with_scores)} extraits)",
+        type="retrieval",
+        default_open=False,
+    ) as sources_step:
+        sources_step.output = sources_md
 
     # 4. Bouton "télécharger le rapport" — l'apprenant peut joindre ce fichier
     # à son dossier de soutenance comme preuve documentée.
