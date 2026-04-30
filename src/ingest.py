@@ -59,6 +59,11 @@ COMPETENCE_PATTERN = re.compile(r"(?=^C\d+\.\s)", re.MULTILINE)
 MAX_CHUNK_SIZE = 1500
 SUB_CHUNK_OVERLAP = 100
 
+# Pages du PDF qui contiennent les LIBELLÉS officiels des compétences C1-C21.
+# (les autres pages sont des annexes : grilles d'évaluation, planning, etc. qui
+# mentionnent les codes mais polluent le retrieval — on les exclut de l'index)
+LIBELLE_PAGES = {4, 5}
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 log = logging.getLogger(__name__)
 
@@ -138,6 +143,12 @@ def split_competences(documents: list[Document]) -> list[Document]:
     # préserver la métadonnée `page` pour la traçabilité (citation des sources).
     for page_doc in documents:
         page_num = page_doc.metadata.get("page")
+        # Filtrer : on garde uniquement les pages des libellés officiels (4-5),
+        # pas les annexes (grilles d'évaluation, planning, etc.) qui mentionnent
+        # les codes Cxx mais introduisent du bruit dans le retrieval.
+        if page_num not in LIBELLE_PAGES:
+            continue
+
         source = page_doc.metadata.get("source", "unknown")
         text = page_doc.page_content
 

@@ -20,11 +20,29 @@ import logging
 import chainlit as cl
 from langchain_core.runnables.config import RunnableConfig
 
-from src.chain import build_chain, format_docs, retrieve_with_scores
+from src.chain import (
+    _get_bm25_retriever,
+    _get_reranker_model,
+    build_chain,
+    format_docs,
+    retrieve_with_scores,
+)
 from src.prompts import ERROR_MESSAGE, WELCOME_MESSAGE
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Pré-warm au chargement du module : on force le téléchargement et le chargement
+# du reranker bge-reranker-v2-m3 (~30s la 1ère fois) AVANT que Chainlit n'accepte
+# des messages utilisateur. Sinon le 1er message bloque pendant 30s, ce qui est
+# pénible en démo soutenance.
+# ---------------------------------------------------------------------------
+log.info("🔥 Pré-warming du retriever (reranker + BM25)…")
+_get_reranker_model()  # télécharge + charge bge-reranker-v2-m3 en mémoire
+_get_bm25_retriever()  # reconstruit BM25 depuis le corpus JSON
+log.info("✅ Retriever prêt — Chainlit peut accepter des messages")
 
 
 # ---------------------------------------------------------------------------
