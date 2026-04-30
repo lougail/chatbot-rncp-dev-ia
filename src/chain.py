@@ -57,7 +57,7 @@ log = logging.getLogger(__name__)
 # Modifiables si on doit ajuster (cf. vault/decisions/2026-04-30-fix-retrieval-strategy.md).
 RETRIEVER_K = 15  # Top-k de chaque retriever AVANT rerank (BM25 et dense)
 RERANKER_TOP_N = 10  # Top-n final après rerank (envoyé au LLM) — sur 21 compétences
-                     # totales, top 10 donne au LLM quasi-toutes les candidates pertinentes
+# totales, top 10 donne au LLM quasi-toutes les candidates pertinentes
 ENSEMBLE_WEIGHTS = [0.4, 0.6]  # Pondération [BM25, dense]
 
 
