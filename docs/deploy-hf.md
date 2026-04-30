@@ -38,15 +38,34 @@ en sidecar).
 | `app.py` | Pré-warm complet au chargement du module | Appel à `ensure_indexed_in_memory()` + reranker + BM25 avant que Chainlit accepte un message |
 | `README.md` | Frontmatter YAML HF Spaces | `sdk: docker`, `app_port: 7860`, `short_description`, etc. |
 
-## 📦 Comment HF gère les binaires (et pourquoi on contourne)
+## 📦 Comment HF gère les binaires (et le piège qu'on a découvert)
 
-HF Spaces **n'accepte plus** :
-- Les fichiers binaires directement dans git
-- Git LFS (deprecated chez HF en 2025)
+HF Spaces utilise **Xet** (leur système propriétaire de stockage des binaires,
+remplaçant LFS depuis mai 2025). Activé par défaut sur tous les nouveaux Spaces.
 
-Ils utilisent **Xet** (système propriétaire HF). Le PDF du référentiel
-(`data/referentiel-rncp-dev-ia.pdf`, 979 KB) est donc uploadé séparément via
-la lib Python `huggingface_hub` :
+### ⚠️ Piège : `huggingface_hub.upload_file()` respecte le `.gitignore` distant
+
+**Comportement non documenté en évidence** : depuis `huggingface_hub` 0.21+,
+`upload_file()` lit le `.gitignore` du repo distant et **drop silencieusement**
+les fichiers qui matchent un pattern, **sans renvoyer d'erreur**. Le commit est
+créé (avec une URL retournée), mais le fichier n'est PAS dans le tree.
+
+**Symptôme observé sur ce projet** :
+- Notre `.gitignore` contenait `data/*.pdf` (pour ne pas commiter le PDF dans `main`)
+- Sur la branche `hf-deploy`, on uploadait le PDF via `upload_file()`
+- L'API retournait succès → mais `list_repo_files()` ne montrait pas le PDF
+- HEAD sur `https://huggingface.co/spaces/.../resolve/main/data/...pdf` → **404**
+
+### Solution
+
+Sur la branche `hf-deploy`, on **commente** la règle `data/*.pdf` du `.gitignore` :
+
+```diff
+- data/*.pdf
++ # data/*.pdf  (commenté volontairement sur hf-deploy)
+```
+
+Puis on uploade le PDF via l'API qui passe automatiquement par Xet :
 
 ```python
 from huggingface_hub import upload_file
@@ -60,8 +79,16 @@ upload_file(
 )
 ```
 
-L'API `huggingface_hub` gère automatiquement Xet pour ces gros fichiers.
-Le PDF apparaît côté HF mais ne peut pas être récupéré via `git clone`.
+Le PDF est dans le repo Space mais **pas dans le build context Docker** (Xet
+stocke les binaires hors-git). Donc on le télécharge au runtime via
+`hf_hub_download()` dans `ensure_indexed_in_memory()`.
+
+### Note sur le push git
+
+`git push` direct rejette les binaires non-Xet (message "Please use Xet").
+Pour push des binaires en git, il faudrait installer
+[git-xet](https://huggingface.co/docs/hub/en/xet/using-xet-storage#git).
+On préfère passer par l'API qui gère ça toute seule.
 
 ## 🔐 Secrets (MISTRAL_API_KEY)
 
