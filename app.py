@@ -164,17 +164,19 @@ async def on_message(message: cl.Message) -> None:
 def _format_sources_for_display(docs_with_scores: list) -> str:
     """Formate les chunks récupérés (avec scores) pour affichage utilisateur.
 
-    Le score affiché est la similarité cosinus retournée par Qdrant.
-    Plus c'est proche de 1.0, plus le chunk est pertinent.
+    Le score affiché est la pertinence sigmoidée [0,1] retournée par le
+    cross-encoder bge-reranker-v2-m3 (cf. `ScoringCrossEncoderReranker`).
+    On l'affiche en pourcentage pour plus de lisibilité — un score brut
+    comme 0.5197 est moins parlant que "52% pertinent".
     """
     lines = ["### Extraits utilisés pour cette analyse\n"]
     for i, (doc, score) in enumerate(docs_with_scores, start=1):
         page = doc.metadata.get("page", "?")
-        # On tronque pour éviter un mur de texte — l'utilisateur peut consulter le PDF original
         snippet = doc.page_content.strip()
         if len(snippet) > 400:
             snippet = snippet[:400] + "…"
-        # Affichage du score sur 2 décimales — plus lisible que 0.7384927
-        lines.append(f"**Source {i}** — page {page} · *score : {score:.2f}*\n\n> {snippet}\n")
+        lines.append(
+            f"**Source {i}** — page {page} · *pertinence : {score * 100:.1f}%*\n\n> {snippet}\n"
+        )
 
     return "\n---\n\n".join(lines)
