@@ -5,6 +5,10 @@
 [![CI](https://github.com/lougail/chatbot-rncp-dev-ia/actions/workflows/ci.yml/badge.svg)](https://github.com/lougail/chatbot-rncp-dev-ia/actions/workflows/ci.yml)
 ![Python 3.13](https://img.shields.io/badge/python-3.13-blue)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
+[![HF Space](https://img.shields.io/badge/🤗_HF_Spaces-Live_demo-yellow)](https://huggingface.co/spaces/centau/chatbot-rncp-dev-ia)
+
+> 🚀 **Démo live** sur Hugging Face Spaces : https://centau-chatbot-rncp-dev-ia.hf.space
+> *(détails du déploiement dans [`docs/deploy-hf.md`](docs/deploy-hf.md))*
 
 ---
 
