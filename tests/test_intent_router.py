@@ -97,6 +97,20 @@ class TestDetectIntent:
         result = detect_intent("Combien de blocs au total dans le RNCP ?")
         assert result.intent == Intent.META
 
+    def test_jury_interview_intent_via_slash_command(self):
+        assert detect_intent("/jury").intent == Intent.JURY_INTERVIEW
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "Prépare-moi à la soutenance",
+            "Simule un entretien jury sur mon projet FastAPI",
+            "Je veux faire une simulation de soutenance",
+        ],
+    )
+    def test_jury_interview_intent_via_keyword(self, query: str):
+        assert detect_intent(query).intent == Intent.JURY_INTERVIEW
+
 
 @pytest.mark.parametrize(
     "query,expected_intent",

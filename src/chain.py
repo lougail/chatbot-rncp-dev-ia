@@ -52,7 +52,7 @@ from src.config import (
     QDRANT_URL,
 )
 from src.ingest import BM25_CORPUS_PATH
-from src.prompts import SYSTEM_PROMPT
+from src.prompts import JURY_PROMPT, SYSTEM_PROMPT
 
 log = logging.getLogger(__name__)
 
@@ -298,35 +298,43 @@ def format_docs(docs: list[Document]) -> str:
 # ---------------------------------------------------------------------------
 # Chain : assemblage final via LCEL (LangChain Expression Language)
 # ---------------------------------------------------------------------------
-def build_chain() -> Runnable:
+def build_chain(prompt_template: str = SYSTEM_PROMPT, temperature: float = 0.0) -> Runnable:
     """Construit la chain RAG : prompt + LLM + parser.
 
     La chain attend en entrée un dict `{"context": <str>, "question": <str>}`
     (pas la question brute) — le retrieval est délégué à `retrieve_with_scores()`
     appelée AVANT, dans `app.py`.
 
-    Pourquoi cette séparation ?
+    Args:
+        prompt_template: Template du prompt avec placeholders {context} et {question}.
+            Par défaut SYSTEM_PROMPT (analyse de couverture). Pour le mode entretien
+            jury, passer JURY_PROMPT — le LLM bascule alors en POSEUR de questions
+            au lieu de répondeur.
+        temperature: 0 pour analyse factuelle (déterminisme), 0.3-0.5 pour le mode
+            jury (un peu de variété dans les questions générées).
+
+    Pourquoi séparer retrieval / chain ?
         Le pipeline hybrid + reranker est lourd (~2-5s en CPU). Si on l'incluait
-        dans la chain, chaque message déclencherait DEUX appels au reranker :
-          1. dans `retrieve_with_scores()` (pour afficher les sources)
-          2. dans `chain.invoke()` (pour générer la réponse)
+        dans la chain, chaque message déclencherait DEUX appels au reranker.
         En séparant, on récupère les docs UNE SEULE FOIS dans `app.py` puis on
         les passe à la chain pour la génération. Latence divisée par 2.
-
-    Pourquoi temperature=0 ?
-        Pour un chatbot d'analyse factuelle, on veut un comportement
-        déterministe et anti-hallucination — pas de créativité.
     """
-    # Template du prompt avec placeholders {context} et {question}
-    prompt = ChatPromptTemplate.from_template(SYSTEM_PROMPT)
+    prompt = ChatPromptTemplate.from_template(prompt_template)
 
-    # LLM : on force temperature=0 pour la stabilité des réponses
     llm = ChatMistralAI(
         model=MISTRAL_LLM_MODEL,
         api_key=MISTRAL_API_KEY,
-        temperature=0,
+        temperature=temperature,
     )
 
-    # Composition LCEL minimale : le retrieval est externe
     chain: Runnable = prompt | llm | StrOutputParser()
     return chain
+
+
+def build_jury_chain() -> Runnable:
+    """Variante du build_chain() pour le mode entretien jury.
+
+    Utilise JURY_PROMPT (poseur de questions) avec temperature=0.4 pour
+    diversifier les questions tout en restant pertinentes.
+    """
+    return build_chain(prompt_template=JURY_PROMPT, temperature=0.4)

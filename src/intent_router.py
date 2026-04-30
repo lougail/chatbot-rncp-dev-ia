@@ -33,6 +33,7 @@ class Intent(StrEnum):
     COMPARISON = "comparison"  # "compare C13 et C19"
     COVERAGE_ANALYSIS = "coverage_analysis"  # "quelles compétences couvre mon projet"
     META = "meta"  # "combien de compétences au total", "liste les blocs"
+    JURY_INTERVIEW = "jury_interview"  # "/jury", "prépare-moi à la soutenance"
     GENERAL = "general"  # fallback : retrieval hybrid standard
 
 
@@ -78,6 +79,11 @@ META_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+JURY_PATTERN = re.compile(
+    r"(?:^|\s)(/jury|jury|entretien|soutenance|prépare[- ]?moi|simul(?:e|ation))\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_competences(text: str) -> list[str]:
     """Extrait les codes compétence (C1-C21) mentionnés dans le texte.
@@ -119,6 +125,14 @@ def detect_intent(query: str) -> IntentResult:
     # 1. Méta : question sur la structure du référentiel
     if META_PATTERN.search(query):
         return IntentResult(intent=Intent.META, bypass_rag=True, suggested_top_n=0)
+
+    # 1bis. Mode entretien jury : "/jury", "prépare-moi à la soutenance"
+    if JURY_PATTERN.search(query):
+        return IntentResult(
+            intent=Intent.JURY_INTERVIEW,
+            competences=competences,
+            suggested_top_n=10,
+        )
 
     # 2. Comparaison : "compare C13 et C19"
     if COMPARISON_PATTERN.search(query) and len(competences) >= 2:

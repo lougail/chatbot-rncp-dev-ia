@@ -25,6 +25,7 @@ from src.chain import (
     _get_bm25_retriever,
     _get_reranker_model,
     build_chain,
+    build_jury_chain,
     format_docs,
     get_chunks_by_competence,
     retrieve_with_scores,
@@ -198,8 +199,15 @@ async def on_message(message: cl.Message) -> None:
     context = format_docs(docs)
 
     # 3. Stream la réponse du LLM
-    # On crée un message vide qu'on va enrichir token par token
-    answer_msg = cl.Message(content="", author="Assistant RNCP")
+    # En mode entretien jury, on bascule sur build_jury_chain() (LLM POSE des
+    # questions au lieu de répondre). Sinon on utilise la chain par défaut.
+    active_chain = build_jury_chain() if intent_result.intent == Intent.JURY_INTERVIEW else chain
+    author_label = (
+        "Jury RNCP (entretien)"
+        if intent_result.intent == Intent.JURY_INTERVIEW
+        else "Assistant RNCP"
+    )
+    answer_msg = cl.Message(content="", author=author_label)
 
     try:
         # cb permet à Chainlit d'afficher le step-by-step (debug en démo)
@@ -208,7 +216,7 @@ async def on_message(message: cl.Message) -> None:
 
         # La chain attend un dict {"context": ..., "question": ...}
         chain_input = {"context": context, "question": user_query}
-        async for chunk in chain.astream(chain_input, config=config):
+        async for chunk in active_chain.astream(chain_input, config=config):
             await answer_msg.stream_token(chunk)
 
         await answer_msg.send()
