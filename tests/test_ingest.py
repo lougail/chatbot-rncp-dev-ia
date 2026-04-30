@@ -3,46 +3,72 @@
 On teste les fonctions PURES (sans appel API ni Qdrant) pour rester rapides
 et indépendants d'Internet/Docker. Les tests d'intégration end-to-end sont
 hors scope d'un MVP.
+
+Pattern AAA (Arrange, Act, Assert) sur chaque test.
 """
 
 from __future__ import annotations
 
 from langchain_core.documents import Document
 
-from src.ingest import split_documents
+from src.ingest import split_competences
 
 
-def test_split_documents_returns_chunks() -> None:
-    """split_documents découpe bien un long texte en plusieurs chunks."""
-    long_text = "Phrase de test. " * 200  # ~3200 caractères → plusieurs chunks attendus
-    docs = [Document(page_content=long_text, metadata={"page": 1})]
+def test_split_competences_extracts_one_chunk_per_code() -> None:
+    """Le splitter doit produire un chunk par compétence présente dans le texte."""
+    # Arrange : texte simulant 3 compétences en début de ligne
+    text = (
+        "Préambule à ignorer.\n"
+        "C1. Automatiser l'extraction de données depuis un service web.\n"
+        "C2. Développer des requêtes SQL d'extraction des données.\n"
+        "C3. Créer une base de données dans le respect du RGPD.\n"
+    )
+    docs = [Document(page_content=text, metadata={"source": "test.pdf"})]
 
-    chunks = split_documents(docs)
+    # Act
+    chunks = split_competences(docs)
 
-    assert len(chunks) > 1, "Un texte long doit être découpé en plusieurs chunks"
-    assert all(isinstance(c, Document) for c in chunks)
-    # Tous les chunks doivent garder la métadonnée page d'origine
-    assert all(c.metadata.get("page") == 1 for c in chunks)
+    # Assert : 3 chunks, un par code, codes correctement extraits
+    codes = sorted(c.metadata["competence"] for c in chunks)
+    assert codes == ["C1", "C2", "C3"]
 
 
-def test_split_documents_short_text() -> None:
-    """Un texte court doit rester en un seul chunk."""
-    docs = [Document(page_content="Texte court.", metadata={"page": 1})]
+def test_split_competences_ignores_text_before_first_code() -> None:
+    """Le préambule (texte avant C1.) ne doit pas devenir un chunk."""
+    # Arrange
+    text = "Sommaire et introduction sans code.\nPas de compétence ici."
+    docs = [Document(page_content=text, metadata={"source": "test.pdf"})]
 
-    chunks = split_documents(docs)
+    # Act
+    chunks = split_competences(docs)
 
+    # Assert
+    assert chunks == []
+
+
+def test_split_competences_preserves_source_metadata() -> None:
+    """La métadonnée `source` doit être propagée à chaque chunk."""
+    # Arrange
+    text = "C1. Première compétence.\nC2. Deuxième compétence."
+    docs = [Document(page_content=text, metadata={"source": "referentiel.pdf"})]
+
+    # Act
+    chunks = split_competences(docs)
+
+    # Assert
+    assert all(c.metadata["source"] == "referentiel.pdf" for c in chunks)
+
+
+def test_split_competences_keeps_code_at_start_of_chunk() -> None:
+    """Chaque chunk doit commencer par son code de compétence (pas perdu)."""
+    # Arrange
+    text = "C7. Identifier des services d'intelligence artificielle préexistants."
+    docs = [Document(page_content=text, metadata={"source": "test.pdf"})]
+
+    # Act
+    chunks = split_competences(docs)
+
+    # Assert
     assert len(chunks) == 1
-    assert chunks[0].page_content == "Texte court."
-
-
-def test_split_documents_preserves_metadata() -> None:
-    """Les métadonnées doivent être propagées à chaque chunk."""
-    docs = [
-        Document(page_content="X" * 1000, metadata={"page": 5, "source": "test.pdf"}),
-    ]
-
-    chunks = split_documents(docs)
-
-    for chunk in chunks:
-        assert chunk.metadata["page"] == 5
-        assert chunk.metadata["source"] == "test.pdf"
+    assert chunks[0].page_content.startswith("C7.")
+    assert chunks[0].metadata["competence"] == "C7"

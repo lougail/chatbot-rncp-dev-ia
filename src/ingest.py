@@ -1,24 +1,27 @@
 """Pipeline d'indexation du référentiel RNCP dans Qdrant.
 
 Ce module fait le travail UNIQUE qu'il faut faire AVANT de pouvoir poser des questions :
-  1. Charger le PDF du référentiel
-  2. Le découper en chunks (RecursiveCharacterTextSplitter de LangChain)
+  1. Charger le PDF du référentiel via PyMuPDF
+  2. Le découper en chunks par regex sur "C\\d+\\." (1 chunk = 1 compétence)
   3. Calculer les embeddings de chaque chunk via Mistral
   4. Stocker (texte + vecteur + métadonnées) dans Qdrant
+  5. Sauvegarder le corpus en JSON pour BM25 (retrieval lexical hybride)
 
 Ce script est lancé UNE FOIS au setup. Ensuite, le chatbot interroge l'index existant.
 
 Usage :
     uv run python -m src.ingest
 
-ou via le main :
+ou avec options :
     uv run python -m src.ingest --collection mon_index --recreate
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import re
 from pathlib import Path
 
 import pymupdf  # alias officiel : `import fitz` mais déprécié en 2024
@@ -30,14 +33,31 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 
 from src.config import (
-    CHUNK_OVERLAP,
-    CHUNK_SIZE,
+    DATA_DIR,
     MISTRAL_API_KEY,
     MISTRAL_EMBED_MODEL,
     QDRANT_COLLECTION,
     QDRANT_URL,
     find_referentiel_pdf,
 )
+
+# Chemin du corpus BM25 sérialisé en JSON.
+# On stocke les Documents bruts (page_content + metadata) pour reconstruire
+# BM25Retriever au démarrage de l'app, sans avoir à re-parser le PDF.
+# Format JSON pour la sécurité (lisible, portable, pas d'exécution de code arbitraire).
+BM25_CORPUS_PATH = DATA_DIR / "bm25_corpus.json"
+
+# Regex de séparation des compétences.
+# Le `(?=...)` est un lookahead : on split AVANT chaque "C1.", "C2.", ..., "C21."
+# en début de ligne, ce qui garantit que chaque chunk commence par son code.
+COMPETENCE_PATTERN = re.compile(r"(?=^C\d+\.\s)", re.MULTILINE)
+
+# Taille max d'un chunk (en caractères).
+# Au-delà, on re-split avec RecursiveCharacterTextSplitter pour éviter :
+#   - les chunks géants (16k+ caractères) qui saturent les embeddings
+#   - le reranker qui retourne des scores nuls sur des séquences trop longues
+MAX_CHUNK_SIZE = 1500
+SUB_CHUNK_OVERLAP = 100
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 log = logging.getLogger(__name__)
@@ -83,32 +103,92 @@ def load_pdf(pdf_path: Path) -> list[Document]:
 
 
 # ---------------------------------------------------------------------------
-# Étape 2 : Split — découpage en chunks
+# Étape 2 : Split — découpage par compétence (regex)
 # ---------------------------------------------------------------------------
-def split_documents(documents: list[Document]) -> list[Document]:
-    """Découpe les documents en chunks de ~CHUNK_SIZE caractères avec un overlap.
+def split_competences(documents: list[Document]) -> list[Document]:
+    """Découpe le PDF en chunks où chaque chunk = une compétence (idéalement).
 
-    On utilise RecursiveCharacterTextSplitter qui essaie de couper sur les
-    séparateurs naturels du texte (paragraphes > phrases > mots) avant de
-    couper au milieu d'un mot.
+    Stratégie : on concatène tout le texte du PDF puis on split sur le pattern
+    `^C\\d+\\.\\s` (Cxx. en début de ligne). Chaque chunk obtenu commence donc
+    par un code de compétence (C1., C2., ..., C21.) et contient :
+      - soit le LIBELLÉ complet de la compétence (cas idéal — pages 4-5 du PDF)
+      - soit une mention de la compétence dans une annexe (grille d'évaluation)
 
-    Pourquoi l'overlap ?
-        Pour préserver le contexte aux frontières des chunks. Sans overlap,
-        une phrase importante coupée en deux peut perdre son sens.
+    Métadonnée injectée :
+      - `competence` : le code (ex: "C5") — utile pour filtrage Qdrant et citation
+
+    Pourquoi pas RecursiveCharacterTextSplitter générique ?
+        Avec chunk_size fixe, les libellés de compétence sont fragmentés sur
+        plusieurs chunks (perdant l'ancrage "C5." en début), ce qui dégrade
+        sévèrement le retrieval. Le split par regex garantit qu'une compétence
+        reste atomique dans son chunk.
     """
-    log.info(f"✂️  Découpage en chunks (size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP})")
+    log.info("✂️  Découpage par compétence (regex sur ^C\\d+\\.)")
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
-        # Séparateurs ordonnés du plus "fort" au plus "faible"
-        # Le splitter essaie d'abord \n\n (paragraphe), puis \n (ligne), etc.
+    # Sub-splitter pour les blocs trop gros (ex: tout ce qui suit C21. en fin de PDF
+    # peut faire 16k caractères, ce qui sature les embeddings et le reranker).
+    sub_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=MAX_CHUNK_SIZE,
+        chunk_overlap=SUB_CHUNK_OVERLAP,
         separators=["\n\n", "\n", ". ", " ", ""],
     )
-    chunks = splitter.split_documents(documents)
 
-    log.info(f"   → {len(chunks)} chunks créés")
+    chunks: list[Document] = []
+    # On split PAGE PAR PAGE plutôt que sur le texte global, ce qui permet de
+    # préserver la métadonnée `page` pour la traçabilité (citation des sources).
+    for page_doc in documents:
+        page_num = page_doc.metadata.get("page")
+        source = page_doc.metadata.get("source", "unknown")
+        text = page_doc.page_content
+
+        # Split sur le pattern (lookahead = "Cxx." reste au début de chaque part)
+        parts = [p.strip() for p in COMPETENCE_PATTERN.split(text) if p.strip()]
+
+        for part in parts:
+            # Extraction du code de compétence (C1, C2, ..., C21)
+            m = re.match(r"^(C\d+)\.", part)
+            if not m:
+                # Texte sans Cxx en début (préambule, milieu d'une compétence
+                # qui chevauche la page précédente, etc.) — on l'ignore.
+                continue
+            code = m.group(1)
+            metadata = {"source": source, "competence": code, "page": page_num}
+
+            if len(part) <= MAX_CHUNK_SIZE:
+                # Cas idéal : le bloc tient dans un seul chunk
+                chunks.append(Document(page_content=part, metadata=metadata))
+            else:
+                # Bloc trop gros : on le sous-découpe en gardant le metadata
+                # pour que chaque sous-chunk reste rattaché à sa compétence et sa page.
+                sub_docs = sub_splitter.create_documents([part], metadatas=[metadata])
+                chunks.extend(sub_docs)
+
+    # Compter combien de compétences uniques on a capturées (pour debug)
+    unique_codes = sorted({c.metadata["competence"] for c in chunks}, key=lambda x: int(x[1:]))
+    log.info(f"   → {len(chunks)} chunks créés, {len(unique_codes)} compétences uniques")
+    log.info(f"   → Compétences couvertes : {', '.join(unique_codes)}")
     return chunks
+
+
+# ---------------------------------------------------------------------------
+# Étape 2 bis : Sauvegarde du corpus pour BM25 (retrieval lexical hybride)
+# ---------------------------------------------------------------------------
+def save_bm25_corpus(chunks: list[Document]) -> None:
+    """Sauvegarde les chunks au format JSON pour reconstruction BM25 au runtime.
+
+    Pourquoi JSON et pas pickle ?
+      - Lisible (debug et audit faciles)
+      - Sécurisé (pas de risque d'exécution de code arbitraire à la deserialization)
+      - Portable entre versions de Python et de LangChain
+
+    Pourquoi sauvegarder le corpus et pas l'objet BM25Retriever ?
+      - Le retriever est trivialement reconstructible (~50ms pour 30 chunks)
+      - L'objet BM25Retriever sérialise mal entre versions de langchain_community
+    """
+    BM25_CORPUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    data = [{"page_content": d.page_content, "metadata": d.metadata} for d in chunks]
+    BM25_CORPUS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    log.info(f"💾 Corpus BM25 sauvegardé : {BM25_CORPUS_PATH.name} ({len(chunks)} chunks)")
 
 
 # ---------------------------------------------------------------------------
@@ -179,12 +259,13 @@ def build_vector_store(
 # Pipeline complet
 # ---------------------------------------------------------------------------
 def run_ingestion(*, collection_name: str = QDRANT_COLLECTION, recreate: bool = False) -> None:
-    """Lance le pipeline complet Load → Split → Embed → Store."""
+    """Lance le pipeline complet Load → Split → Embed → Store + corpus BM25."""
     pdf_path = find_referentiel_pdf()
 
     documents = load_pdf(pdf_path)
-    chunks = split_documents(documents)
+    chunks = split_competences(documents)
     build_vector_store(chunks, collection_name=collection_name, recreate=recreate)
+    save_bm25_corpus(chunks)
 
     log.info("🎉 Indexation terminée. Tu peux maintenant lancer l'app : `chainlit run app.py`")
 

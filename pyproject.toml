@@ -33,7 +33,8 @@ dependencies = [
     # Utilitaires
     "python-dotenv>=1.0",                 # Chargement .env
     "pydantic>=2.9",                      # Validation typée (utile pour structured outputs en Phase 3)
-    "rank-bm25>=0.2.2",                   # Implémentation BM25 (pour Phase 2)
+    "rank-bm25>=0.2.2",                   # Implémentation BM25 (retrieval lexical)
+    "sentence-transformers>=3.0",         # Cross-encoder reranker (bge-reranker-v2-m3)
 ]
 
 # Dépendances de dev (tests, lint, format)

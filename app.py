@@ -20,7 +20,7 @@ import logging
 import chainlit as cl
 from langchain_core.runnables.config import RunnableConfig
 
-from src.chain import build_chain, retrieve_with_scores
+from src.chain import build_chain, format_docs, retrieve_with_scores
 from src.prompts import ERROR_MESSAGE, WELCOME_MESSAGE
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
@@ -85,9 +85,10 @@ async def on_message(message: cl.Message) -> None:
         ).send()
         return
 
-    # 1. Récupérer les chunks AVEC leurs scores de similarité
-    # On le fait avant la chain pour pouvoir afficher les sources en démo
-    # (sinon la chain encapsule le retrieval et on perd l'info)
+    # 1. Récupérer les chunks AVEC leurs scores de pertinence (cross-encoder)
+    # Pipeline complet : BM25 + Qdrant → EnsembleRetriever → CrossEncoder rerank → top 5
+    # IMPORTANT : on appelle ça UNE SEULE FOIS, puis on passe les docs à la chain
+    # (sinon le pipeline hybrid+rerank serait exécuté deux fois = +5s de latence)
     try:
         docs_with_scores = retrieve_with_scores(message.content)
     except Exception:
@@ -96,7 +97,7 @@ async def on_message(message: cl.Message) -> None:
         return
 
     if not docs_with_scores:
-        # Aucun chunk au-dessus du SCORE_THRESHOLD — la question est probablement hors-sujet
+        # Aucun chunk pertinent — la question est probablement hors-sujet
         await cl.Message(
             content=(
                 "🤔 Je n'ai trouvé aucun extrait pertinent dans le référentiel pour cette question. "
@@ -106,16 +107,23 @@ async def on_message(message: cl.Message) -> None:
         ).send()
         return
 
-    # 2. Stream la réponse du LLM
+    # 2. Préparer le contexte pour le prompt LLM
+    # On extrait les Documents (sans les scores) et on les formatte
+    docs = [d for d, _ in docs_with_scores]
+    context = format_docs(docs)
+
+    # 3. Stream la réponse du LLM
     # On crée un message vide qu'on va enrichir token par token
     answer_msg = cl.Message(content="", author="Assistant RNCP")
 
     try:
-        # cb permet à Chainlit d'afficher le step-by-step (retrieval visible en démo)
+        # cb permet à Chainlit d'afficher le step-by-step (debug en démo)
         cb = cl.LangchainCallbackHandler()
         config = RunnableConfig(callbacks=[cb])
 
-        async for chunk in chain.astream(message.content, config=config):
+        # La chain attend un dict {"context": ..., "question": ...}
+        chain_input = {"context": context, "question": message.content}
+        async for chunk in chain.astream(chain_input, config=config):
             await answer_msg.stream_token(chunk)
 
         await answer_msg.send()

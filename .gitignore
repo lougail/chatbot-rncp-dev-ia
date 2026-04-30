@@ -40,6 +40,9 @@ faiss_index/
 # Note : on garde le PDF dans data/ pour ce projet mais on l'ignore pour des raisons de propriété intellectuelle
 data/*.pdf
 
+# Corpus BM25 régénéré à chaque ingestion — pas besoin de le commiter
+data/bm25_corpus.json
+
 # Chainlit
 .chainlit/
 .files/
