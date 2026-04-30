@@ -28,6 +28,7 @@ from src.chain import (
     retrieve_with_scores,
 )
 from src.prompts import ERROR_MESSAGE, WELCOME_MESSAGE
+from src.repo_analyzer import analyze_repo, extract_github_url
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 log = logging.getLogger(__name__)
@@ -94,9 +95,42 @@ async def on_message(message: cl.Message) -> None:
         await cl.Message(content=ERROR_MESSAGE, author="Système").send()
         return
 
+    # ----- V2 : Détection automatique d'une URL GitHub dans le message -----
+    # Si l'utilisateur colle un lien `https://github.com/org/repo`, on clone le
+    # repo, on détecte les technos, et on remplace son message par une
+    # description structurée du projet — ainsi le pipeline RAG existant
+    # analyse le repo au lieu d'une description en langage naturel.
+    user_query = message.content
+    repo_url = extract_github_url(user_query)
+    if repo_url:
+        async with cl.Step(name="🔍 Analyse du repo GitHub", type="tool") as step:
+            step.input = repo_url
+            try:
+                analysis = analyze_repo(repo_url)
+                user_query = analysis.to_natural_language()
+                step.output = user_query
+                await cl.Message(
+                    content=f"📦 Repo analysé : **{analysis.org}/{analysis.repo}**\n\n"
+                    f"Technos détectées : {', '.join(analysis.techs) or '_aucune_'}\n\n"
+                    "_Analyse RAG en cours sur cette base…_",
+                    author="Assistant RNCP",
+                ).send()
+            except Exception as exc:
+                log.exception("Erreur analyse repo")
+                step.output = f"Erreur : {exc}"
+                await cl.Message(
+                    content=(
+                        f"❌ Impossible d'analyser ce repo (`{repo_url}`). "
+                        "Vérifie qu'il est public et que l'URL est correcte. "
+                        "Tu peux aussi me décrire ton projet en langage naturel."
+                    ),
+                    author="Assistant RNCP",
+                ).send()
+                return
+
     # Garde-fou : message trop court = on demande plus de détails
     # (évite de gaspiller un appel API pour rien)
-    if len(message.content.strip()) < 20:
+    if len(user_query.strip()) < 20:
         await cl.Message(
             content="⚠️ Décris ton projet en au moins 20 caractères pour que je puisse l'analyser correctement.",
             author="Assistant RNCP",
@@ -108,7 +142,7 @@ async def on_message(message: cl.Message) -> None:
     # IMPORTANT : on appelle ça UNE SEULE FOIS, puis on passe les docs à la chain
     # (sinon le pipeline hybrid+rerank serait exécuté deux fois = +5s de latence)
     try:
-        docs_with_scores = retrieve_with_scores(message.content)
+        docs_with_scores = retrieve_with_scores(user_query)
     except Exception:
         log.exception("Erreur retrieval")
         await cl.Message(content=ERROR_MESSAGE, author="Système").send()
@@ -140,7 +174,7 @@ async def on_message(message: cl.Message) -> None:
         config = RunnableConfig(callbacks=[cb])
 
         # La chain attend un dict {"context": ..., "question": ...}
-        chain_input = {"context": context, "question": message.content}
+        chain_input = {"context": context, "question": user_query}
         async for chunk in chain.astream(chain_input, config=config):
             await answer_msg.stream_token(chunk)
 
