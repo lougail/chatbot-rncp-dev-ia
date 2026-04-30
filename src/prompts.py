@@ -108,16 +108,22 @@ WELCOME_MESSAGE = """👋 **Bienvenue sur le Chatbot RNCP Dev IA**
 
 Cet assistant analyse la couverture du référentiel RNCP "Développeur en intelligence artificielle" (titre 2023, Simplon) par un projet que tu décris.
 
-### Comment l'utiliser
-Décris ton projet en langage naturel — les technos utilisées, les fonctionnalités implémentées, les pratiques mises en place. Plus c'est précis, meilleure sera l'analyse.
+### 🚀 Mode rapide : colle l'URL d'un repo GitHub
 
-### Exemples de questions
+Le bot clone le repo, détecte les technos automatiquement (FastAPI, Docker, GHA, MLflow, etc.) et fait l'analyse.
+Exemple : `https://github.com/ton-pseudo/ton-projet`
+
+### 💬 Mode classique : décris ton projet en langage naturel
+
+Plus c'est précis, meilleure sera l'analyse. Mentionne les technos, l'architecture, les pratiques mises en place.
+
+#### Exemples de questions
 
 - *"Mon projet déploie une API FastAPI avec Docker et un pipeline GitHub Actions. Quelles compétences couvre-t-il ?"*
 - *"La compétence C13 est-elle validée si j'ai seulement un Dockerfile sans CI/CD ?"*
 - *"Quelles compétences me manquent pour valider le bloc MLOps ?"*
 
-➡️ Vas-y, décris ton projet."""
+➡️ Vas-y, colle ton URL ou décris ton projet."""
 
 
 # ---------------------------------------------------------------------------

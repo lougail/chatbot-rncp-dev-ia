@@ -16,6 +16,7 @@ L'interface est alors accessible sur http://localhost:8000
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 import chainlit as cl
 from langchain_core.runnables.config import RunnableConfig
@@ -193,10 +194,54 @@ async def on_message(message: cl.Message) -> None:
         author="Sources du référentiel",
     ).send()
 
+    # 4. Bouton "télécharger le rapport" — l'apprenant peut joindre ce fichier
+    # à son dossier de soutenance comme preuve documentée.
+    report_md = _build_report(user_query, answer_msg.content, sources_md)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    report_file = cl.File(
+        name=f"rapport-rncp-{timestamp}.md",
+        content=report_md.encode("utf-8"),
+        mime="text/markdown",
+        display="inline",
+    )
+    await cl.Message(
+        content="📥 **Télécharge le rapport** ci-dessous (joignable à ton dossier de soutenance) :",
+        elements=[report_file],
+        author="Assistant RNCP",
+    ).send()
+
 
 # ---------------------------------------------------------------------------
 # Helpers d'affichage
 # ---------------------------------------------------------------------------
+def _build_report(user_query: str, analysis: str, sources_md: str) -> str:
+    """Assemble un rapport markdown autonome, joignable au dossier de soutenance.
+
+    Inclut la question/description, l'analyse complète du LLM, les sources
+    sourcées, et un horodatage. Sortie destinée à un export `.md` que
+    l'apprenant peut convertir en PDF avec WeasyPrint ou pandoc.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return (
+        "# Rapport d'analyse de couverture RNCP Dev IA\n\n"
+        f"**Généré le** : {timestamp}\n"
+        "**Référentiel** : RNCP Développeur en intelligence artificielle (titre 2023, Simplon)\n"
+        "**Outil** : chatbot-rncp-dev-ia "
+        "(https://huggingface.co/spaces/centau/chatbot-rncp-dev-ia)\n\n"
+        "---\n\n"
+        "## 📌 Projet analysé\n\n"
+        f"{user_query}\n\n"
+        "---\n\n"
+        "## 🎯 Analyse\n\n"
+        f"{analysis}\n\n"
+        "---\n\n"
+        f"{sources_md}\n\n"
+        "---\n\n"
+        "*Rapport généré par un système RAG (Mistral + Qdrant + reranker bge-reranker-v2-m3). "
+        "Les analyses sont basées sur les extraits du référentiel cités ci-dessus.*\n"
+    )
+
+
 def _format_sources_for_display(docs_with_scores: list) -> str:
     """Formate les chunks récupérés (avec scores) pour affichage utilisateur.
 
