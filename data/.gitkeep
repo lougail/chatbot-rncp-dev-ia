@@ -1,0 +1,5 @@
+# Place ici le fichier PDF du référentiel RNCP :
+#   data/referentiel-rncp-dev-ia.pdf
+#
+# Ce dossier est versionné mais les PDF sont ignorés (.gitignore) pour éviter
+# d'embarquer des documents potentiellement protégés par droits d'auteur.

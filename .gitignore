@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Caches Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets — CRITIQUE
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Vector store data (ne jamais commiter, peut être très volumineux)
+qdrant_storage/
+chroma_db/
+faiss_index/
+
+# Données utilisateur (à fournir via volume Docker ou téléchargement)
+# Note : on garde le PDF dans data/ pour ce projet mais on l'ignore pour des raisons de propriété intellectuelle
+data/*.pdf
+
+# Chainlit
+.chainlit/
+.files/
+chainlit.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Claude Code (état de session, à ne pas commiter)
+.claude/state.json
+.claude/events.jsonl
+.claude-context.md
+
+# Logs
+*.log
+logs/
+
+# Tests
+.tox/
+.nox/
+coverage.xml
+*.cover

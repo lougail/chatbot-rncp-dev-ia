@@ -1,0 +1,51 @@
+# Git
+.git/
+.gitignore
+.github/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# Environnements virtuels (on installe dans l'image)
+.venv/
+venv/
+
+# Secrets — CRITIQUE : ne jamais inclure dans l'image
+.env
+.env.local
+*.pem
+*.key
+
+# Vector store local (sera reconstruit dans le container)
+qdrant_storage/
+chroma_db/
+
+# Docker (pas besoin de copier le Dockerfile dans l'image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Tests (pas besoin en runtime)
+tests/
+
+# Documentation (déjà dans le README, pas besoin du reste)
+docs/
+*.md
+!README.md
+
+# Claude Code
+.claude/
+CLAUDE.md

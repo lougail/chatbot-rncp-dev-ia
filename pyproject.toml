@@ -1,0 +1,73 @@
+[project]
+name = "chatbot-rncp-dev-ia"
+version = "0.1.0"
+description = "Chatbot RAG analysant la couverture du référentiel RNCP Dev IA par un projet décrit en langage naturel"
+authors = [
+    { name = "Louis Gaillard", email = "louis.gaillard94@gmail.com" }
+]
+requires-python = ">=3.13"
+readme = "README.md"
+
+# Dépendances de production
+# On verrouille les versions majeures pour éviter les surprises de breaking changes
+dependencies = [
+    # Pipeline RAG
+    "langchain>=0.3,<1.0",                # Orchestration générale
+    "langchain-core>=0.3,<1.0",
+    "langchain-community>=0.3,<1.0",      # BM25Retriever (pour hybrid search en Phase 2)
+    "langchain-mistralai>=0.2",           # Wrapper Mistral (LLM + embeddings)
+    "langchain-qdrant>=0.2",              # Wrapper Qdrant
+    "langchain-text-splitters>=0.3",
+
+    # Vector store
+    "qdrant-client>=1.12",                # Client Python Qdrant
+
+    # PDF parsing
+    "pypdf>=5.1",                         # Lecture du référentiel PDF
+
+    # Interface
+    "chainlit>=2.0",                      # UI chat moderne (alternative à Gradio)
+
+    # Utilitaires
+    "python-dotenv>=1.0",                 # Chargement .env
+    "pydantic>=2.9",                      # Validation typée (utile pour structured outputs en Phase 3)
+    "rank-bm25>=0.2.2",                   # Implémentation BM25 (pour Phase 2)
+]
+
+# Dépendances de dev (tests, lint, format)
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",                # Pour tester les fonctions async (Chainlit)
+    "ruff>=0.7",
+]
+
+# Configuration Ruff (lint + format unifiés)
+# Ruff = remplaçant moderne et 100x plus rapide de black + isort + flake8 + pylint
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# Règles activées (équivalent black + isort + pyflakes + bugbear + pyupgrade)
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]  # line-length géré par le formatter
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# Configuration pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+
+# Build system (uv n'a pas besoin de plus)
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

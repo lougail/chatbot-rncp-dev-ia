@@ -1,0 +1,148 @@
+"""Interface Chainlit du chatbot RNCP Dev IA.
+
+Chainlit est un framework moderne 2026 spécialisé pour les apps chat LLM.
+Avantages clés vs Gradio :
+  - Streaming natif (réponse mot par mot)
+  - Affichage step-by-step du raisonnement (montre le retrieval en démo)
+  - Persistence des threads par session
+  - UX chat plus fluide
+
+Pour lancer :
+    chainlit run app.py
+
+L'interface est alors accessible sur http://localhost:8000
+"""
+
+from __future__ import annotations
+
+import logging
+
+import chainlit as cl
+from langchain_core.runnables.config import RunnableConfig
+
+from src.chain import build_chain, build_retriever
+from src.prompts import ERROR_MESSAGE, WELCOME_MESSAGE
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
+log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Démarrage : on initialise le pipeline et on l'attache à la session
+# ---------------------------------------------------------------------------
+@cl.on_chat_start
+async def on_chat_start() -> None:
+    """Hook appelé à chaque nouvelle session de chat.
+
+    On construit la chain RAG une fois par session et on la stocke dans
+    `cl.user_session` — c'est l'équivalent Chainlit de `gr.State` en Gradio :
+    chaque utilisateur a son propre état, pas de fuite entre sessions.
+    """
+    try:
+        chain = build_chain()
+        retriever = build_retriever()
+    except Exception:
+        # On log l'erreur côté serveur, on affiche un message générique côté user
+        log.exception("Erreur lors du build de la chain")
+        await cl.Message(
+            content=(
+                "❌ Impossible de démarrer le chatbot. "
+                "Vérifie que :\n"
+                "1. Qdrant est démarré (`docker compose up qdrant`)\n"
+                "2. L'index existe (`uv run python -m src.ingest`)\n"
+                "3. Ta clé MISTRAL_API_KEY est dans le fichier `.env`"
+            ),
+            author="Système",
+        ).send()
+        return
+
+    # Stockage en session — accessible depuis on_message via cl.user_session.get(...)
+    cl.user_session.set("chain", chain)
+    cl.user_session.set("retriever", retriever)
+
+    # Message d'accueil
+    await cl.Message(content=WELCOME_MESSAGE, author="Assistant RNCP").send()
+
+
+# ---------------------------------------------------------------------------
+# Réception d'un message : on lance la chain et on stream la réponse
+# ---------------------------------------------------------------------------
+@cl.on_message
+async def on_message(message: cl.Message) -> None:
+    """Hook appelé à chaque message envoyé par l'utilisateur."""
+    chain = cl.user_session.get("chain")
+    retriever = cl.user_session.get("retriever")
+
+    if chain is None or retriever is None:
+        await cl.Message(content=ERROR_MESSAGE, author="Système").send()
+        return
+
+    # Garde-fou : message trop court = on demande plus de détails
+    # (évite de gaspiller un appel API pour rien)
+    if len(message.content.strip()) < 20:
+        await cl.Message(
+            content="⚠️ Décris ton projet en au moins 20 caractères pour que je puisse l'analyser correctement.",
+            author="Assistant RNCP",
+        ).send()
+        return
+
+    # 1. Récupérer les chunks pour pouvoir afficher les sources EN PARALLÈLE de la réponse
+    try:
+        docs = await retriever.ainvoke(message.content)
+    except Exception:
+        log.exception("Erreur retrieval")
+        await cl.Message(content=ERROR_MESSAGE, author="Système").send()
+        return
+
+    if not docs:
+        # Aucun chunk pertinent — la question est probablement hors-sujet
+        await cl.Message(
+            content=(
+                "🤔 Je n'ai trouvé aucun extrait pertinent dans le référentiel pour cette question. "
+                "Reformule ou détaille davantage ton projet."
+            ),
+            author="Assistant RNCP",
+        ).send()
+        return
+
+    # 2. Stream la réponse du LLM
+    # On crée un message vide qu'on va enrichir token par token
+    answer_msg = cl.Message(content="", author="Assistant RNCP")
+
+    try:
+        # cb permet à Chainlit d'afficher le step-by-step (retrieval visible en démo)
+        cb = cl.LangchainCallbackHandler()
+        config = RunnableConfig(callbacks=[cb])
+
+        async for chunk in chain.astream(message.content, config=config):
+            await answer_msg.stream_token(chunk)
+
+        await answer_msg.send()
+    except Exception:
+        log.exception("Erreur génération LLM")
+        await cl.Message(content=ERROR_MESSAGE, author="Système").send()
+        return
+
+    # 3. Afficher les sources utilisées (extraits du référentiel)
+    sources_md = _format_sources_for_display(docs)
+    await cl.Message(
+        content=sources_md,
+        author="📚 Sources du référentiel",
+    ).send()
+
+
+# ---------------------------------------------------------------------------
+# Helpers d'affichage
+# ---------------------------------------------------------------------------
+def _format_sources_for_display(docs: list) -> str:
+    """Formate les chunks récupérés pour affichage utilisateur (markdown lisible)."""
+    lines = ["### Extraits utilisés pour cette analyse\n"]
+    for i, doc in enumerate(docs, start=1):
+        page = doc.metadata.get("page", "?")
+        # On tronque pour éviter un mur de texte — l'utilisateur peut consulter le PDF original
+        snippet = doc.page_content.strip()
+        if len(snippet) > 400:
+            snippet = snippet[:400] + "…"
+        lines.append(f"**Source {i}** — page {page}\n\n> {snippet}\n")
+
+    return "\n---\n\n".join(lines)
