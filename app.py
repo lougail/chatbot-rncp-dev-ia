@@ -28,6 +28,7 @@ from src.chain import (
     format_docs,
     retrieve_with_scores,
 )
+from src.intent_router import META_RESPONSE, Intent, detect_intent
 from src.prompts import ERROR_MESSAGE, WELCOME_MESSAGE
 from src.repo_analyzer import analyze_repo, extract_github_url
 
@@ -129,9 +130,29 @@ async def on_message(message: cl.Message) -> None:
                 ).send()
                 return
 
+    # ----- Détection d'intention (V2) -----
+    # On classe la question : compétence spécifique, comparaison, méta, etc.
+    # Ça permet de :
+    #   - Court-circuiter le RAG pour les questions méta (réponse instantanée)
+    #   - Adapter le top_n selon le besoin (1-3 chunks pour une définition,
+    #     10 pour une analyse de couverture)
+    intent_result = detect_intent(user_query)
+    log.info(
+        "Intent : %s (compétences=%s, top_n=%s)",
+        intent_result.intent,
+        intent_result.competences,
+        intent_result.suggested_top_n,
+    )
+
+    # Court-circuit RAG : pour les questions méta, on a une réponse pré-calculée
+    if intent_result.bypass_rag and intent_result.intent == Intent.META:
+        await cl.Message(content=META_RESPONSE, author="Assistant RNCP").send()
+        return
+
     # Garde-fou : message trop court = on demande plus de détails
-    # (évite de gaspiller un appel API pour rien)
-    if len(user_query.strip()) < 20:
+    # (évite de gaspiller un appel API pour rien — sauf si on a déjà détecté
+    # une compétence précise, ex: "C13 ?")
+    if len(user_query.strip()) < 20 and intent_result.intent != Intent.SPECIFIC_COMPETENCE:
         await cl.Message(
             content="⚠️ Décris ton projet en au moins 20 caractères pour que je puisse l'analyser correctement.",
             author="Assistant RNCP",
