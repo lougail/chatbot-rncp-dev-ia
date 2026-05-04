@@ -30,7 +30,7 @@ from src.chain import (
     get_chunks_by_competence,
     retrieve_with_scores,
 )
-from src.intent_router import META_RESPONSE, Intent, detect_intent
+from src.intent_router import META_RESPONSE, SMALL_TALK_RESPONSE, Intent, detect_intent
 from src.prompts import ERROR_MESSAGE, WELCOME_MESSAGE
 from src.repo_analyzer import analyze_repo, extract_github_url
 
@@ -146,15 +146,38 @@ async def on_message(message: cl.Message) -> None:
         intent_result.suggested_top_n,
     )
 
-    # Court-circuit RAG : pour les questions méta, on a une réponse pré-calculée
-    if intent_result.bypass_rag and intent_result.intent == Intent.META:
-        await cl.Message(content=META_RESPONSE, author="Assistant RNCP").send()
+    # Court-circuit RAG : réponses pré-calculées pour méta + small talk
+    if intent_result.bypass_rag:
+        if intent_result.intent == Intent.META:
+            await cl.Message(content=META_RESPONSE, author="Assistant RNCP").send()
+            return
+        if intent_result.intent == Intent.SMALL_TALK:
+            await cl.Message(content=SMALL_TALK_RESPONSE, author="Assistant RNCP").send()
+            return
+
+    # Cas particulier : `/jury` sans projet décrit. On ne peut pas générer
+    # de questions techniques sans contexte projet — on demande à l'utilisateur
+    # de coller son repo ou décrire son projet d'abord.
+    if intent_result.intent == Intent.JURY_INTERVIEW and len(user_query.strip()) < 20:
+        await cl.Message(
+            content=(
+                "🎓 **Mode entretien jury activé.**\n\n"
+                "Pour que je te pose des questions techniques pertinentes, j'ai besoin "
+                "que tu me décrives ton projet ou colles l'URL de ton repo GitHub d'abord.\n\n"
+                "Exemple : `/jury https://github.com/ton-pseudo/ton-projet` ou "
+                "`/jury mon projet est une API FastAPI avec Docker et MLflow…`"
+            ),
+            author="Assistant RNCP",
+        ).send()
         return
 
     # Garde-fou : message trop court = on demande plus de détails
-    # (évite de gaspiller un appel API pour rien — sauf si on a déjà détecté
-    # une compétence précise, ex: "C13 ?")
-    if len(user_query.strip()) < 20 and intent_result.intent != Intent.SPECIFIC_COMPETENCE:
+    # Exempte les intents qui ont leur propre logique de validation
+    # (SPECIFIC_COMPETENCE = "C13 ?" est valide ; JURY déjà géré ci-dessus).
+    if len(user_query.strip()) < 20 and intent_result.intent not in (
+        Intent.SPECIFIC_COMPETENCE,
+        Intent.JURY_INTERVIEW,
+    ):
         await cl.Message(
             content="⚠️ Décris ton projet en au moins 20 caractères pour que je puisse l'analyser correctement.",
             author="Assistant RNCP",

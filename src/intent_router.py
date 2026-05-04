@@ -34,6 +34,7 @@ class Intent(StrEnum):
     COVERAGE_ANALYSIS = "coverage_analysis"  # "quelles compétences couvre mon projet"
     META = "meta"  # "combien de compétences au total", "liste les blocs"
     JURY_INTERVIEW = "jury_interview"  # "/jury", "prépare-moi à la soutenance"
+    SMALL_TALK = "small_talk"  # "salut", "qui es-tu", "quel est ton rôle"
     GENERAL = "general"  # fallback : retrieval hybrid standard
 
 
@@ -84,6 +85,17 @@ JURY_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Small talk : salutations + questions sur l'identité du bot.
+# On match au début de la question pour éviter de bloquer une vraie analyse
+# ("Bonjour, voici mon projet FastAPI..." ne doit PAS être small talk).
+SMALL_TALK_PATTERN = re.compile(
+    r"^\s*(salut|bonjour|hello|hey|coucou|yo|"
+    r"qui es[- ]?tu|t'es qui|c'est quoi ce bot|"
+    r"quel est ton (?:rôle|role|but)|tu sers à quoi|"
+    r"que (?:fais|peux)[- ]?tu|aide(?:[- ]?moi)?)\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_competences(text: str) -> list[str]:
     """Extrait les codes compétence (C1-C21) mentionnés dans le texte.
@@ -121,6 +133,13 @@ def detect_intent(query: str) -> IntentResult:
         IntentResult avec intent, compétences mentionnées et stratégie.
     """
     competences = _extract_competences(query)
+
+    # 0. Small talk : "salut", "qui es-tu", "quel est ton rôle"
+    #    Réponse pré-calculée, pas de RAG. On limite aux messages COURTS
+    #    pour éviter de capturer "Bonjour, mon projet utilise FastAPI..."
+    #    (qui doit être traité comme une vraie demande d'analyse).
+    if SMALL_TALK_PATTERN.search(query) and len(query.strip()) <= 40:
+        return IntentResult(intent=Intent.SMALL_TALK, bypass_rag=True, suggested_top_n=0)
 
     # 1. Méta : question sur la structure du référentiel
     if META_PATTERN.search(query):
@@ -179,3 +198,27 @@ META_RESPONSE = """Le référentiel RNCP "Développeur en intelligence artificie
   résolution d'incidents.
 
 **Total : 21 compétences** ; chaque bloc peut être validé indépendamment."""
+
+
+# Réponse pré-calculée pour SMALL_TALK (présentation conversationnelle du bot)
+SMALL_TALK_RESPONSE = """Salut 👋 Je suis le **Chatbot RNCP Dev IA**.
+
+Mon rôle : **analyser la couverture du référentiel RNCP "Développeur en
+intelligence artificielle"** (titre 2023, Simplon) par un projet que tu me
+décris ou dont tu me donnes le repo GitHub.
+
+### Ce que je peux faire
+
+- 🚀 **Analyser un repo GitHub** : colle l'URL, je clone, je détecte les
+  technos (FastAPI, Docker, GitHub Actions, MLflow, etc.), et je te dis
+  quelles compétences ton projet valide.
+- 💬 **Analyser une description** : décris ton projet en français, même
+  résultat.
+- 🎓 **Mode entretien jury** : tape `/jury` pour que je te pose 5 questions
+  techniques exigeantes — entraînement à la soutenance.
+- 📋 **Question ciblée** : "C13 ?" pour le détail d'une compétence,
+  "compare C13 et C19" pour une comparaison.
+- 📥 **Rapport téléchargeable** Markdown (joignable au dossier de soutenance).
+
+➡️ Vas-y, **colle ton URL GitHub ou décris ton projet**.
+"""

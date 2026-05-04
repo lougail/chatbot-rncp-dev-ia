@@ -103,6 +103,30 @@ class TestDetectIntent:
     @pytest.mark.parametrize(
         "query",
         [
+            "salut",
+            "Bonjour",
+            "Hey",
+            "qui es-tu",
+            "qui es tu ?",
+            "quel est ton rôle",
+            "quel est ton role",
+            "tu sers à quoi",
+        ],
+    )
+    def test_small_talk_intent(self, query: str):
+        result = detect_intent(query)
+        assert result.intent == Intent.SMALL_TALK
+        assert result.bypass_rag is True
+
+    def test_small_talk_does_not_match_inside_real_query(self):
+        # "Bonjour, mon projet utilise FastAPI..." → ne doit PAS être small talk
+        # car SMALL_TALK_PATTERN est ancré au début de la chaîne (^)
+        result = detect_intent("Bonjour, mon projet utilise FastAPI et Docker")
+        assert result.intent != Intent.SMALL_TALK
+
+    @pytest.mark.parametrize(
+        "query",
+        [
             "Prépare-moi à la soutenance",
             "Simule un entretien jury sur mon projet FastAPI",
             "Je veux faire une simulation de soutenance",
@@ -117,7 +141,7 @@ class TestDetectIntent:
     [
         ("https://github.com/user/repo", Intent.GENERAL),  # URL, pas de mots-clés
         ("Mon projet FastAPI Docker", Intent.COVERAGE_ANALYSIS),  # "projet" → coverage
-        ("Bonjour, comment ça va ?", Intent.GENERAL),  # vraie question hors-scope
+        ("Bonjour", Intent.SMALL_TALK),  # salutation seule
         ("C13 ?", Intent.SPECIFIC_COMPETENCE),
         ("Liste des blocs ?", Intent.META),
     ],
