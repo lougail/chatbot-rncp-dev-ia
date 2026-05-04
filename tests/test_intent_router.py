@@ -124,6 +124,39 @@ class TestDetectIntent:
         result = detect_intent("Bonjour, mon projet utilise FastAPI et Docker")
         assert result.intent != Intent.SMALL_TALK
 
+
+class TestScopeDetection:
+    """Garde-fou hors-scope : on ne lance pas de RAG bidon sur la météo."""
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "Quelle est la météo à Paris ?",
+            "Raconte-moi une blague",
+            "Combien font 2+2 ?",
+            "Tu connais Pikachu ?",
+        ],
+    )
+    def test_out_of_scope_general_questions(self, query: str):
+        result = detect_intent(query)
+        assert result.intent == Intent.GENERAL
+        assert result.in_scope is False
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "J'ai un projet FastAPI avec Docker",
+            "Mon code utilise PyTorch et MLflow",
+            "Notre architecture est en microservices",
+            "Comment valider le bloc MLOps de la formation ?",
+        ],
+    )
+    def test_in_scope_general_questions(self, query: str):
+        result = detect_intent(query)
+        # L'important : in_scope=True (le routing peut être COVERAGE_ANALYSIS
+        # ou GENERAL selon les mots-clés présents, peu importe ici)
+        assert result.in_scope is True
+
     @pytest.mark.parametrize(
         "query",
         [

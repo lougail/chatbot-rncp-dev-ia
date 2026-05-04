@@ -47,12 +47,15 @@ class IntentResult:
         competences: Numéros de compétences mentionnés (ex: ["C13", "C19"]).
         suggested_top_n: Nombre suggéré de chunks à retrieve pour cet intent.
         bypass_rag: Si True, la question peut être répondue sans appel RAG.
+        in_scope: Si False, la question est hors du domaine RNCP/dev — l'app
+            doit répondre poliment au lieu de lancer un RAG bidon.
     """
 
     intent: Intent
     competences: list[str] = field(default_factory=list)
     suggested_top_n: int = 10
     bypass_rag: bool = False
+    in_scope: bool = True
 
 
 # Patterns regex compilés (init module = une seule fois)
@@ -93,6 +96,36 @@ SMALL_TALK_PATTERN = re.compile(
     r"qui es[- ]?tu|t'es qui|c'est quoi ce bot|"
     r"quel est ton (?:rôle|role|but)|tu sers à quoi|"
     r"que (?:fais|peux)[- ]?tu|aide(?:[- ]?moi)?)\b",
+    re.IGNORECASE,
+)
+
+# Mots-clés "dans le scope" du bot : RNCP, dev IA, projet, technos, etc.
+# Si la question est en GENERAL et ne contient AUCUN de ces mots, on
+# répond poliment hors-scope au lieu de lancer un RAG bidon (météo, blagues, etc.).
+# Liste pensée pour être large mais pertinente — éviter les mots trop génériques.
+SCOPE_KEYWORDS_PATTERN = re.compile(
+    r"\b(?:"
+    # RNCP / formation
+    r"rncp|compétences?|bloc|simplon|soutenance|jury|formation|dossier|titre|"
+    r"référentiel|certification|évaluation|"
+    # Projet / code
+    r"projets?|repos?|code|app(?:lication)?|développ(?:e|ement)|"
+    r"architecture|conception|implémente?|fonctionn(?:e|ement|alité)?|"
+    # Technos courantes
+    r"api|rest|graphql|docker|kubernetes|k8s|fastapi|flask|django|"
+    r"streamlit|gradio|chainlit|nodejs?|typescript|"
+    r"github|gitlab|ci(?:[/_]?cd)?|pipeline|workflow|actions|"
+    r"test(?:s|ing)?|pytest|unit\s?test|coverage|"
+    # Data / IA
+    r"data|donnée|database|sql|nosql|mongodb|postgres|"
+    r"modèle|model|ia|ai|ml|mlops|machine[- ]?learning|deep[- ]?learning|"
+    r"embedding|llm|rag|vector|qdrant|chroma|"
+    # Production / monitoring
+    r"déploi(?:e|ement)|monitoring|observabilité|prometheus|grafana|logs?|métri(?:que|cs)|"
+    r"prod(?:uction)?|staging|incident|"
+    # Auto-description (verbes 1ère personne)
+    r"j'ai|mon\b|notre\b|nous\b|j'utilise|on\s+a\s|on\s+utilise"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -178,7 +211,10 @@ def detect_intent(query: str) -> IntentResult:
         return IntentResult(intent=Intent.COVERAGE_ANALYSIS, suggested_top_n=10)
 
     # 6. Fallback : retrieval hybrid standard
-    return IntentResult(intent=Intent.GENERAL, suggested_top_n=10)
+    # On vérifie aussi si la question contient au moins un signal "dans le scope"
+    # (mots-clés RNCP/dev/IA). Sinon → réponse polie hors-scope au lieu d'un RAG bidon.
+    in_scope = bool(SCOPE_KEYWORDS_PATTERN.search(query))
+    return IntentResult(intent=Intent.GENERAL, suggested_top_n=10, in_scope=in_scope)
 
 
 # ---------------------------------------------------------------------------
@@ -222,3 +258,18 @@ décris ou dont tu me donnes le repo GitHub.
 
 ➡️ Vas-y, **colle ton URL GitHub ou décris ton projet**.
 """
+
+
+# Réponse polie quand la question est clairement hors du scope du bot
+# (météo, blagues, sujets non-RNCP, etc.) — évite un RAG bidon.
+OUT_OF_SCOPE_RESPONSE = """Je suis spécialisé sur le **référentiel RNCP "Développeur en intelligence artificielle"**
+(titre 2023, Simplon). Ta question semble hors de ce périmètre.
+
+### Voici ce que je peux faire pour toi
+
+- 🚀 **Analyser un repo GitHub** : colle l'URL → détection des technos + couverture RNCP
+- 💬 **Analyser une description de projet** en langage naturel
+- 🎓 **Mode entretien jury** : tape `/jury <projet>` pour t'entraîner à la soutenance
+- 📋 **Question ciblée** : "C13 ?", "compare C13 et C19", "combien de blocs ?"
+
+➡️ **Reformule** ta question dans ce cadre ou décris ton projet."""

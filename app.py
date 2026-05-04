@@ -30,7 +30,13 @@ from src.chain import (
     get_chunks_by_competence,
     retrieve_with_scores,
 )
-from src.intent_router import META_RESPONSE, SMALL_TALK_RESPONSE, Intent, detect_intent
+from src.intent_router import (
+    META_RESPONSE,
+    OUT_OF_SCOPE_RESPONSE,
+    SMALL_TALK_RESPONSE,
+    Intent,
+    detect_intent,
+)
 from src.prompts import ERROR_MESSAGE, WELCOME_MESSAGE
 from src.repo_analyzer import analyze_repo, extract_github_url
 
@@ -154,6 +160,13 @@ async def on_message(message: cl.Message) -> None:
         if intent_result.intent == Intent.SMALL_TALK:
             await cl.Message(content=SMALL_TALK_RESPONSE, author="Assistant RNCP").send()
             return
+
+    # Garde-fou hors-scope : si la question est en GENERAL et ne contient
+    # aucun signal RNCP/dev/IA, on répond poliment au lieu de lancer un RAG
+    # bidon (météo, blagues, sujets sans rapport).
+    if intent_result.intent == Intent.GENERAL and not intent_result.in_scope:
+        await cl.Message(content=OUT_OF_SCOPE_RESPONSE, author="Assistant RNCP").send()
+        return
 
     # Cas particulier : `/jury` sans projet décrit. On ne peut pas générer
     # de questions techniques sans contexte projet — on demande à l'utilisateur
